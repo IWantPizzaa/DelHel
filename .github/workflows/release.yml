@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (1.2.3, without leading v)"
+        required: true
+        type: string
+
+env:
+  SOLUTION_FILE_PATH: DelHel.sln
+
+  BUILD_CONFIGURATION: Release
+  BUILD_PLATFORM: x86
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+
+    env:
+      VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate version format
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version. Must be MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+      - name: Update version.txt
+        run: echo "$VERSION" > version.txt
+
+      - name: Update constants.h
+        run: |
+          sed -i "s/^#define PLUGIN_VERSION .*/#define PLUGIN_VERSION \"$VERSION\"/" DelHel/constants.h
+
+      - name: Update DelHel.rc (UTF-16)
+        run: |
+          numeric="${VERSION//./,},0"
+          string="$VERSION.0"
+
+          # Convert UTF-16 → UTF-8
+          iconv -f UTF-16LE -t UTF-8 DelHel/DelHel.rc > rc_utf8.tmp
+
+          # FILEVERSION / PRODUCTVERSION numeric
+          sed -i "s/FILEVERSION [0-9,]*/FILEVERSION $numeric/" rc_utf8.tmp
+          sed -i "s/PRODUCTVERSION [0-9,]*/PRODUCTVERSION $numeric/" rc_utf8.tmp
+
+          # String versions
+          sed -i "s/VALUE \"FileVersion\", \".*\"/VALUE \"FileVersion\", \"$string\"/" rc_utf8.tmp
+          sed -i "s/VALUE \"ProductVersion\", \".*\"/VALUE \"ProductVersion\", \"$string\"/" rc_utf8.tmp
+
+          # Convert back to UTF-16LE
+          iconv -f UTF-8 -t UTF-16LE rc_utf8.tmp > DelHel/DelHel.rc
+          rm rc_utf8.tmp
+
+      - name: Commit and tag
+        id: tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git add .
+          git commit -m "Version bump to v$VERSION"
+          git tag "v$VERSION"
+          git push origin HEAD
+          git push origin "v$VERSION"
+
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+  release:
+    runs-on: windows-latest
+    needs: [prepare-release]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build
+        run: msbuild -t:build -restore -p:RestorePackagesConfig=true -m -p:Configuration=${{env.BUILD_CONFIGURATION}} -p:Platform=${{env.BUILD_PLATFORM}} ${{env.SOLUTION_FILE_PATH}}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.tag }}
+          name: ${{ needs.prepare-release.outputs.tag }}
+          generate_release_notes: true
+          files: "${{env.BUILD_CONFIGURATION}}/DelHel.dll"
