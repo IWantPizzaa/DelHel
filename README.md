@@ -6,6 +6,7 @@ The plugin performs validation of FPLs (**f**light **pl**ans), sets the appropri
 
 ## Table of Contents
 
+-   [Fork changes (v3.0.4)](#fork-changes-v304)
 -   [Getting started](#getting-started)
     -   [Prerequisites](#prerequisites)
     -   [Installation](#installation)
@@ -19,6 +20,14 @@ The plugin performs validation of FPLs (**f**light **pl**ans), sets the appropri
 -   [Contributing](#contributing)
     -   [Development setup](#development-setup)
 -   [License](#license)
+
+## Fork changes (v3.0.4)
+
+This fork (`IWantPizzaa/DelHel`) is based on `MorpheusXAUT/DelHel` and includes local operational changes used in this setup:
+
+-   CFL validation for processed FPLs now resolves expected CFL from runway/engine SID data (`cfl`/`cfl_prop`) instead of only generic SID CFL. This fixes cases where prop departures were correctly processed but still showed `CFL` in the validation column (e.g. `LFMN` `SODRI` prop departures at `FL070`).
+-   Local data/config tuning is included in `airports.json` and `routing.json`.
+-   `Python Test/IFPS_validator.py` is included as a local validation helper script.
 
 ## Getting started
 
